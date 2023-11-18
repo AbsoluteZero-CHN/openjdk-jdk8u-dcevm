@@ -50,6 +50,8 @@
 #include "oops/oop.inline2.hpp"
 #include "oops/typeArrayKlass.hpp"
 #include "prims/jvmtiEnvBase.hpp"
+#include "prims/jvmtiExport.hpp"
+#include "prims/jvmtiEnvBase.hpp"
 #include "prims/methodHandles.hpp"
 #include "runtime/arguments.hpp"
 #include "runtime/biasedLocking.hpp"
@@ -1912,7 +1914,17 @@ void SystemDictionary::initialize(TRAPS) {
   // Allocate private object used as system class loader lock
   _system_loader_lock_obj = oopFactory::new_intArray(0, CHECK);
   // Initialize basic classes
-  initialize_preloaded_classes(CHECK);
+  resolve_well_known_classes(CHECK);
+}
+
+bool SystemDictionary::update_well_known_klass(InstanceKlass* old_klass, InstanceKlass* new_klass) {
+  for (int id = FIRST_WKID; id < WKID_LIMIT; id++) {
+    if (well_known_klass((WKID) id) == old_klass) {
+      *well_known_klass_addr((WKID)id) = new_klass;
+      return true;
+    }
+  }
+  return false;
 }
 
 // Compact table of directions on the initialization of klasses:
@@ -1926,7 +1938,7 @@ static const short wk_init_info[] = {
   0
 };
 
-bool SystemDictionary::initialize_wk_klass(WKID id, int init_opt, TRAPS) {
+bool SystemDictionary::resolve_wk_klass(WKID id, int init_opt, TRAPS) {
   assert(id >= (int)FIRST_WKID && id < (int)WKID_LIMIT, "oob");
   int  info = wk_init_info[id - FIRST_WKID];
   int  sid  = (info >> CEIL_LG_OPTION_LIMIT);
@@ -1943,7 +1955,7 @@ bool SystemDictionary::initialize_wk_klass(WKID id, int init_opt, TRAPS) {
   return ((*klassp) != NULL);
 }
 
-void SystemDictionary::initialize_wk_klasses_until(WKID limit_id, WKID &start_id, TRAPS) {
+void SystemDictionary::resolve_wk_klasses_until(WKID limit_id, WKID &start_id, TRAPS) {
   assert((int)start_id <= (int)limit_id, "IDs are out of order!");
   for (int id = (int)start_id; id < (int)limit_id; id++) {
     assert(id >= (int)FIRST_WKID && id < (int)WKID_LIMIT, "oob");
@@ -1951,26 +1963,26 @@ void SystemDictionary::initialize_wk_klasses_until(WKID limit_id, WKID &start_id
     int sid  = (info >> CEIL_LG_OPTION_LIMIT);
     int opt  = (info & right_n_bits(CEIL_LG_OPTION_LIMIT));
 
-    initialize_wk_klass((WKID)id, opt, CHECK);
+    resolve_wk_klass((WKID)id, opt, CHECK);
   }
 
   // move the starting value forward to the limit:
   start_id = limit_id;
 }
 
-void SystemDictionary::initialize_preloaded_classes(TRAPS) {
-  assert(WK_KLASS(Object_klass) == NULL, "preloaded classes should only be initialized once");
+void SystemDictionary::resolve_well_known_classes(TRAPS) {
+  assert(WK_KLASS(Object_klass) == NULL, "well-known classes should only be initialized once");
   // Preload commonly used klasses
   WKID scan = FIRST_WKID;
   // first do Object, then String, Class
   if (UseSharedSpaces) {
-    initialize_wk_klasses_through(WK_KLASS_ENUM_NAME(Object_klass), scan, CHECK);
+    resolve_wk_klasses_through(WK_KLASS_ENUM_NAME(Object_klass), scan, CHECK);
     // Initialize the constant pool for the Object_class
     InstanceKlass* ik = InstanceKlass::cast(Object_klass());
     ik->constants()->restore_unshareable_info(CHECK);
-    initialize_wk_klasses_through(WK_KLASS_ENUM_NAME(Class_klass), scan, CHECK);
+    resolve_wk_klasses_through(WK_KLASS_ENUM_NAME(Class_klass), scan, CHECK);
   } else {
-    initialize_wk_klasses_through(WK_KLASS_ENUM_NAME(Class_klass), scan, CHECK);
+    resolve_wk_klasses_through(WK_KLASS_ENUM_NAME(Class_klass), scan, CHECK);
   }
 
   // Calculate offsets for String and Class classes since they are loaded and
@@ -1987,33 +1999,33 @@ void SystemDictionary::initialize_preloaded_classes(TRAPS) {
   Universe::fixup_mirrors(CHECK);
 
   // do a bunch more:
-  initialize_wk_klasses_through(WK_KLASS_ENUM_NAME(Reference_klass), scan, CHECK);
+  resolve_wk_klasses_through(WK_KLASS_ENUM_NAME(Reference_klass), scan, CHECK);
 
   // Preload ref klasses and set reference types
   InstanceKlass::cast(WK_KLASS(Reference_klass))->set_reference_type(REF_OTHER);
   InstanceRefKlass::update_nonstatic_oop_maps(WK_KLASS(Reference_klass));
 
-  initialize_wk_klasses_through(WK_KLASS_ENUM_NAME(Cleaner_klass), scan, CHECK);
+  resolve_wk_klasses_through(WK_KLASS_ENUM_NAME(Cleaner_klass), scan, CHECK);
   InstanceKlass::cast(WK_KLASS(SoftReference_klass))->set_reference_type(REF_SOFT);
   InstanceKlass::cast(WK_KLASS(WeakReference_klass))->set_reference_type(REF_WEAK);
   InstanceKlass::cast(WK_KLASS(FinalReference_klass))->set_reference_type(REF_FINAL);
   InstanceKlass::cast(WK_KLASS(PhantomReference_klass))->set_reference_type(REF_PHANTOM);
   InstanceKlass::cast(WK_KLASS(Cleaner_klass))->set_reference_type(REF_CLEANER);
 
-  initialize_wk_klasses_through(WK_KLASS_ENUM_NAME(ReferenceQueue_klass), scan, CHECK);
+  resolve_wk_klasses_through(WK_KLASS_ENUM_NAME(ReferenceQueue_klass), scan, CHECK);
 
   // JSR 292 classes
   WKID jsr292_group_start = WK_KLASS_ENUM_NAME(MethodHandle_klass);
   WKID jsr292_group_end   = WK_KLASS_ENUM_NAME(VolatileCallSite_klass);
-  initialize_wk_klasses_until(jsr292_group_start, scan, CHECK);
+  resolve_wk_klasses_until(jsr292_group_start, scan, CHECK);
   if (EnableInvokeDynamic) {
-    initialize_wk_klasses_through(jsr292_group_end, scan, CHECK);
+    resolve_wk_klasses_through(jsr292_group_end, scan, CHECK);
   } else {
     // Skip the JSR 292 classes, if not enabled.
     scan = WKID(jsr292_group_end + 1);
   }
 
-  initialize_wk_klasses_until(WKID_LIMIT, scan, CHECK);
+  resolve_wk_klasses_until(WKID_LIMIT, scan, CHECK);
 
   _box_klasses[T_BOOLEAN] = WK_KLASS(Boolean_klass);
   _box_klasses[T_CHAR]    = WK_KLASS(Character_klass);

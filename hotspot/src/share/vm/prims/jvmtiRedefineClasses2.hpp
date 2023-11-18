@@ -104,6 +104,8 @@ class VM_EnhancedRedefineClasses: public VM_GC_Operation {
 
   void flush_dependent_code(instanceKlassHandle k_h, TRAPS);
 
+  void reinitializeJDKClasses();
+
   static void check_class(Klass* k_oop,/* oop initiating_loader,*/ TRAPS) PRODUCT_RETURN;
 
   static void unpatch_bytecode(Method* method);

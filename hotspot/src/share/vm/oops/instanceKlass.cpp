@@ -687,19 +687,22 @@ bool InstanceKlass::link_class_impl(
 
     if (!this_oop->is_linked()) {
       if (!this_oop->is_rewritten()) {
-        {
-          // Timer includes any side effects of class verification (resolution,
-          // etc), but not recursive entry into verify_code().
-          PerfClassTraceTime timer(ClassLoader::perf_class_verify_time(),
-                                   ClassLoader::perf_class_verify_selftime(),
-                                   ClassLoader::perf_classes_verified(),
-                                   jt->get_thread_stat()->perf_recursion_counts_addr(),
-                                   jt->get_thread_stat()->perf_timers_addr(),
-                                   PerfClassTraceTime::CLASS_VERIFY);
-          bool verify_ok = verify_code(this_oop, throw_verifyerror, THREAD);
-          if (!verify_ok) {
-            return false;
-          }
+          // (DCEVM): If class A is being redefined and class B->A (B is extended from A) and B is host class of anonymous class C
+          // then second redefinition fails with cannot cast klass exception. So we currently turn off bytecode verification
+          // on redefinition.
+          if (!AllowEnhancedClassRedefinition || !this_oop->newest_version()->is_redefining()) {
+            // Timer includes any side effects of class verification (resolution,
+            // etc), but not recursive entry into verify_code().
+            PerfClassTraceTime timer(ClassLoader::perf_class_verify_time(),
+                                     ClassLoader::perf_class_verify_selftime(),
+                                     ClassLoader::perf_classes_verified(),
+                                     jt->get_thread_stat()->perf_recursion_counts_addr(),
+                                     jt->get_thread_stat()->perf_timers_addr(),
+                                     PerfClassTraceTime::CLASS_VERIFY);
+            bool verify_ok = verify_code(this_oop, throw_verifyerror, THREAD);
+            if (!verify_ok) {
+              return false;
+            }
         }
 
         // Just in case a side-effect of verify linked this class already

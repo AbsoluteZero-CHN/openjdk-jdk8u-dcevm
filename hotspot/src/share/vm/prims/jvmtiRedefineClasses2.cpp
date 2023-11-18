@@ -1255,6 +1255,16 @@ void VM_EnhancedRedefineClasses::doit() {
     redefine_single_class(_new_classes->at(i), thread);
   }
 
+  // Update possible redefinition of well-known classes (like ClassLoader)
+  for (int i = 0; i < _new_classes->length(); i++) {
+    InstanceKlass* cur = InstanceKlass::cast(_new_classes->at(i)());
+    if (cur->old_version() != NULL && SystemDictionary::update_well_known_klass(InstanceKlass::cast(cur->old_version()), cur))
+    {
+//      log_trace(redefine, class, obsolete, metadata)("Well known class updated %s", cur->external_name());
+      ciObjectFactory::set_reinitialize_wk_klasses();
+    }
+  }
+
   // Deoptimize all compiled code that depends on this class
   flush_dependent_code(instanceKlassHandle(Thread::current(), (Klass*)NULL), Thread::current());
 
@@ -1378,6 +1388,48 @@ void VM_EnhancedRedefineClasses::doit() {
   }
 }
 
+void VM_EnhancedRedefineClasses::reinitializeJDKClasses() {
+  if (!_new_classes->is_empty()) {
+    ResourceMark rm(Thread::current());
+
+    for (int i = 0; i < _new_classes->length(); i++) {
+      InstanceKlass* cur = InstanceKlass::cast(_new_classes->at(i)());
+
+      if (cur->name()->starts_with("java/") || cur->name()->starts_with("jdk/") || cur->name()->starts_with("sun/")) {
+
+        if (cur == SystemDictionary::ClassLoader_klass()) {
+          // ClassLoader.addClass method is cached in Universe, we must redefine
+          Universe::reinitialize_loader_addClass_method(Thread::current());
+//          log_trace(redefine, class, obsolete, metadata)("Reinitialize ClassLoade addClass method cache.");
+        }
+
+        // naive assumptions that only JDK classes has native static "registerNative" and "initIDs" methods
+        int end;
+        Symbol* signature = vmSymbols::registerNatives_method_name();
+        int midx = cur->find_method_by_name(signature, &end);
+        if (midx == -1) {
+          signature = vmSymbols::initIDs_method_name();
+          midx = cur->find_method_by_name(signature, &end);
+        }
+        Method* m = NULL;
+        if (midx != -1) {
+          m = cur->methods()->at(midx);
+        }
+        if (m != NULL && m->is_static() && m->is_native()) {
+          // call static registerNative if present
+          JavaValue result(T_VOID);
+          JavaCalls::call_static(&result,
+                                 cur,
+                                 signature,
+                                 vmSymbols::void_method_signature(),
+                                 Thread::current());
+//          log_trace(redefine, class, obsolete, metadata)("Reregister natives of JDK class %s", cur->external_name());
+        }
+      }
+    }
+  }
+}
+
 void VM_EnhancedRedefineClasses::doit_epilogue() {
 
   RC_TIMER_START(_timer_vm_op_epilogue);
@@ -1385,6 +1437,9 @@ void VM_EnhancedRedefineClasses::doit_epilogue() {
   ResourceMark mark;
 
   VM_GC_Operation::doit_epilogue();
+
+  reinitializeJDKClasses();
+
   RC_TRACE(0x00000001, ("GC Operation epilogue finished!"));
 
   // Free the array of scratch classes
@@ -1825,6 +1880,12 @@ void VM_EnhancedRedefineClasses::check_methods_and_mark_as_obsolete(BitMap *emcp
     } else {
       // mark obsolete methods as such
       old_method->set_is_obsolete();
+      if (old_method->method_idnum() != new_method->method_idnum()) {
+//        log_error(redefine, class, normalize)
+//        ("Method not matched: %d != %d  old: %s = new: %s",  old_method->method_idnum(), new_method->method_idnum(),
+//                old_method->name_and_sig_as_C_string(), new_method->name_and_sig_as_C_string());
+        // assert(old_method->method_idnum() == new_method->method_idnum(), "must match");
+      }
       obsolete_count++;
 
       // With tracing we try not to "yack" too much. The position of

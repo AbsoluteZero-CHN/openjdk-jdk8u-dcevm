@@ -274,6 +274,7 @@ class java_lang_Class : AllStatic {
   // Testing
   static bool is_instance(oop obj) {
     return obj != NULL && obj->klass() == SystemDictionary::Class_klass();
+//    return obj != NULL && (obj->klass() == SystemDictionary::Class_klass() || obj->klass()->new_version() == SystemDictionary::Class_klass());
   }
   static bool is_primitive(oop java_class);
   static BasicType primitive_type(oop java_class);

@@ -1052,6 +1052,34 @@ Universe::NARROW_OOP_MODE Universe::narrow_oop_mode() {
   return UnscaledNarrowOop;
 }
 
+void initialize_known_method(LatestMethodCache* method_cache,
+                             InstanceKlass* ik,
+                             const char* method,
+                             Symbol* signature,
+                             bool is_static, TRAPS)
+{
+  TempNewSymbol name = SymbolTable::new_symbol(method, CHECK);
+  Method* m = NULL;
+  // The klass must be linked before looking up the method.
+  if (!ik->link_class_or_fail(THREAD) ||
+      ((m = ik->find_method(name, signature)) == NULL) ||
+      is_static != m->is_static()) {
+    ResourceMark rm(THREAD);
+    // NoSuchMethodException doesn't actually work because it tries to run the
+    // <init> function before java_lang_Class is linked. Print error and exit.
+    vm_exit_during_initialization(err_msg("Unable to link/verify %s.%s method",
+                                          ik->name()->as_C_string(), method));
+  }
+  method_cache->init(ik, m);
+}
+
+void Universe::reinitialize_loader_addClass_method(TRAPS) {
+  // Set up method for registering loaded classes in class loader vector
+  initialize_known_method(_loader_addClass_cache,
+                          InstanceKlass::cast(SystemDictionary::ClassLoader_klass()),
+                          "addClass",
+                          vmSymbols::class_void_signature(), false, CHECK);
+}
 
 void universe2_init() {
   EXCEPTION_MARK;

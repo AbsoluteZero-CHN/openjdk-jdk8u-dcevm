@@ -307,6 +307,7 @@
   /* common method and field names */                                                             \
   template(object_initializer_name,                   "<init>")                                   \
   template(class_initializer_name,                    "<clinit>")                                 \
+  template(ha_class_initializer_name,                 "$$ha$clinit")                              \
   template(println_name,                              "println")                                  \
   template(printStackTrace_name,                      "printStackTrace")                          \
   template(main_name,                                 "main")                                     \
@@ -321,6 +322,8 @@
   template(exit_method_name,                          "exit")                                     \
   template(add_method_name,                           "add")                                      \
   template(remove_method_name,                        "remove")                                   \
+  template(registerNatives_method_name,               "registerNatives")                          \
+  template(initIDs_method_name,                       "initIDs")                                  \
   template(parent_name,                               "parent")                                   \
   template(threads_name,                              "threads")                                  \
   template(groups_name,                               "groups")                                   \

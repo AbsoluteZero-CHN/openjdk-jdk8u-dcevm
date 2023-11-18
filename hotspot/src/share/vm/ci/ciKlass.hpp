@@ -126,6 +126,8 @@ public:
   virtual ciKlass* exact_klass() = 0;
 
   void print_name_on(outputStream* st);
+
+  Klass* new_version() { return get_Klass()->new_version(); }
 };
 
 #endif // SHARE_VM_CI_CIKLASS_HPP
